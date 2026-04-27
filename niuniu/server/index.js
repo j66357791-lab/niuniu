@@ -12,7 +12,6 @@ import Transaction from './models/Transaction.js'
 const app = express()
 const httpServer = createServer(app)
 app.use(express.json())
-app.use(require('cors')({ origin: '*', credentials: true })) 
 
 const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/niuniu';
 mongoose
