@@ -1,7 +1,9 @@
 import { Server as SocketIOServer } from 'socket.io'
 import { registerBaseHandlers } from './baseHandler.js'
+// ✅ 新增：引入牛牛游戏专属事件处理器
+import { niuniuHandler } from './games/niuniu/handler.js'
 
-// 新增：模块级变量保存 io 实例
+// 模块级变量保存 io 实例
 let io = null
 
 /**
@@ -25,21 +27,22 @@ export function initSocket(httpServer) {
   io.on('connection', (socket) => {
     console.log(`[Socket] 新连接: ${socket.id}`)
 
-    // 心跳响应，配合前端 latency 监控
+    // 心跳响应
     socket.on('ping', () => {
       socket.emit('pong')
     })
 
-    // 委托给基础事件处理器（auth、disconnect、create_room 等）
+    // 1. 挂载基础事件（进房、出房、红包、聊天等）
     registerBaseHandlers(io, socket)
     
-    // 游戏专属事件由 baseHandler 在加入房间时动态挂载，此处无需额外处理
+    // ✅ 2. 挂载牛牛核心玩法事件（准备、抢庄、下注、亮牌等）
+    niuniuHandler(socket, io)
   })
 
   return io
 }
 
-// ✅ 新增：导出 getIO 供其他非 socket 上下文文件（如 transferController）使用
+// 导出 getIO 供其他文件使用
 export function getIO() {
   if (!io) {
     throw new Error('Socket.IO 尚未初始化！请确保在 app.js 中调用了 initSocket(httpServer)')
