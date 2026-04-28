@@ -5,8 +5,9 @@ let currentBGM = null
 let bgmVolume = 1.0
 let bgmFadeTimer = null
 
-const volume = parseFloat(localStorage.getItem('audio_volume') || '0.5')
-const isMuted = localStorage.getItem('audio_muted') === 'true'
+// ✅ 修复点：将 const 改为 let，允许后续修改音量和静音状态
+let volume = parseFloat(localStorage.getItem('audio_volume') || '0.5')
+let isMuted = localStorage.getItem('audio_muted') === 'true'
 
 const soundMap = {
   flip_card: '/audio/flip_card.wav',
@@ -31,6 +32,7 @@ function unlock() {
   document.removeEventListener('click', unlock)
   document.removeEventListener('touchstart', unlock)
 }
+
 document.addEventListener('click', unlock)
 document.addEventListener('touchstart', unlock)
 
@@ -72,7 +74,9 @@ function playTone(freq, duration, vol) {
 
 function switchBGM(name) {
   if (!isUnlocked) return
-  if (bgmFadeTimer) { clearInterval(bgmFadeTimer); bgmFadeTimer = null }
+  if (bgmFadeTimer) {
+    clearInterval(bgmFadeTimer); bgmFadeTimer = null
+  }
   const doSwitch = () => {
     if (currentBGM) {
       currentBGM.pause()
