@@ -1,6 +1,6 @@
 import { rooms, playerStatusMap, findUserRoom, baseFormatRoomUpdate, clearAllTimers, removeUserFromRoom } from './baseState.js'
 import User from '../models/User.js'
-import { forceSettleBox } from '../services/boxService.js' // 【新增】引入红包结算服务
+// 【已删除】危险引入：import { forceSettleBox } from '../services/boxService.js'
 
 /**
  * ==========================================
@@ -198,9 +198,9 @@ export function registerBaseHandlers(io, socket) {
     
     socket.leave(`room_${room.roomId}`)
     
-    // 【修复点】有未结算的红包，直接调用 Service 处理，不依赖已断开的 socket
+    // 【恢复稳定逻辑】尝试触发内部事件，如果玩家网络正常则立即结算；如果断线了发不出，则交给60秒超时兜底
     if (room.currentBox && !room.currentBox.isFinished) {
-      forceSettleBox(io, room)
+      socket.emit('__force_settle_box')
     }
 
     if (room.phase !== 'waiting') {
@@ -236,9 +236,9 @@ export function registerBaseHandlers(io, socket) {
     
     socket.leave(`room_${room.roomId}`)
     
-    // 【修复点】有未结算的红包，直接调用 Service 处理，不依赖已断开的 socket
+    // 【恢复稳定逻辑】断线时发不出事件无所谓，handler.js 里的 60000 毫秒定时器会自动兜底结算退款
     if (room.currentBox && !room.currentBox.isFinished) {
-      forceSettleBox(io, room)
+      socket.emit('__force_settle_box')
     }
 
     if (room.phase === 'waiting') {
