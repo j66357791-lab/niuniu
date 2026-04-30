@@ -1,15 +1,16 @@
 import { rooms, playerStatusMap, findUserRoom, baseFormatRoomUpdate, clearAllTimers, removeUserFromRoom } from './baseState.js'
 import User from '../models/User.js'
+import { forceSettleBox } from '../services/boxService.js' // 【新增】引入红包结算服务
 
-/** * ========================================== * [架构核心] 游戏插件注册表 (万能插座) * ========================================== */
+/**
+ * ==========================================
+ * [架构核心] 游戏插件注册表 (万能插座)
+ * ==========================================
+ */
 const gameRegistry = new Map()
 
 export function registerGame(gameType, formatFn, fullStateFn, offlineFn) {
-  gameRegistry.set(gameType, {
-    formatUpdate: formatFn,
-    sendFullState: fullStateFn,
-    handleOffline: offlineFn
-  })
+  gameRegistry.set(gameType, { formatUpdate: formatFn, sendFullState: fullStateFn, handleOffline: offlineFn })
 }
 
 // 内部工具：获取当前房间绑定的游戏插件
@@ -17,9 +18,12 @@ function getPlugin(room) {
   return room ? gameRegistry.get(room.gameType) : null
 }
 
-/** * ========================================== * [核心注册函数] 基础房间事件 * ========================================== */
+/**
+ * ==========================================
+ * [核心注册函数] 基础房间事件
+ * ==========================================
+ */
 export function registerBaseHandlers(io, socket) {
-  
   // 1. 身份认证
   socket.on('auth', ({ userId, username }) => {
     socket.data.userId = userId
@@ -34,12 +38,11 @@ export function registerBaseHandlers(io, socket) {
     const username = socket.data.username
     if (!userId) return callback?.({ ok: false, msg: '未认证' })
     if (!password || password.length < 4) return callback?.({ ok: false, msg: '密码至少4位' })
-    
     if (playerStatusMap.get(userId) === 'in_game') {
       const stuckRoom = findUserRoom(userId)
       return callback?.({ ok: false, code: 'IN_GAME_REDIRECT', msg: `您在房间 ${stuckRoom?.roomId} 还有未完成的对局`, roomId: stuckRoom?.roomId })
     }
-    
+
     let score = 0
     try {
       const u = await User.findById(userId).select('score').lean()
@@ -58,7 +61,7 @@ export function registerBaseHandlers(io, socket) {
     do {
       roomId = String(Math.floor(1000 + Math.random() * 9000))
     } while (rooms.has(roomId))
-    
+
     const mp = parseInt(maxPlayers) || 4
     const bs = parseInt(baseScore) || 10
     if (![10, 30, 50, 100].includes(bs)) return callback?.({ ok: false, msg: '底分档位不正确' })
@@ -67,7 +70,7 @@ export function registerBaseHandlers(io, socket) {
 
     const room = {
       roomId,
-      gameType: currentGameType, // 【新增】给房间打上游戏类型标签
+      gameType: currentGameType,
       password,
       ownerId: userId,
       phase: 'waiting',
@@ -83,33 +86,20 @@ export function registerBaseHandlers(io, socket) {
       countdownSeconds: 0,
       players: new Map([[
         userId, {
-          userId,
-          username,
-          socketId: socket.id,
-          isReady: false,
-          hand: [],
-          offline: false,
-          roundScore: 0,
-          score,
-          role: 'player',
-          hasRobbed: false,
-          wantsRob: false,
-          bullResult: null,
-          bullResultObj: null,
-          hasShownDown: false,
-          betMultiplier: 0,
-          offlineTimer: null
+          userId, username, socketId: socket.id,
+          isReady: false, hand: [], offline: false, roundScore: 0, score,
+          role: 'player', hasRobbed: false, wantsRob: false,
+          bullResult: null, bullResultObj: null, hasShownDown: false,
+          betMultiplier: 0, offlineTimer: null
         }
       ]])
     }
-    
+
     rooms.set(roomId, room)
     socket.join(`room_${roomId}`)
-    
-    // 【改造点】动态调用对应游戏的渲染器
+
     const plugin = getPlugin(room)
     if (plugin?.formatUpdate) io.to(`room_${roomId}`).emit('room_update', plugin.formatUpdate(room))
-    
     callback?.({ ok: true, roomId })
   })
 
@@ -118,15 +108,14 @@ export function registerBaseHandlers(io, socket) {
     const userId = socket.data.userId
     const username = socket.data.username
     if (!userId) return callback?.({ ok: false, msg: '未认证' })
-    
     if (playerStatusMap.get(userId) === 'in_game') {
       const stuckRoom = findUserRoom(userId)
       return callback?.({ ok: false, code: 'IN_GAME_REDIRECT', msg: `您在房间 ${stuckRoom?.roomId} 还有未完成的对局`, roomId: stuckRoom?.roomId })
     }
-    
+
     const room = rooms.get(roomId)
     if (!room) return callback?.({ ok: false, msg: '房间不存在' })
-    
+
     // 重连逻辑：动态调用对应游戏的全量补发
     if (room.players.has(userId)) {
       callback?.({ ok: true })
@@ -134,17 +123,18 @@ export function registerBaseHandlers(io, socket) {
       if (plugin?.sendFullState) plugin.sendFullState(socket, room, userId)
       return
     }
-    
+
     if (room.password !== password) return callback?.({ ok: false, msg: '房间密码错误' })
+
     const isSpectator = room.phase !== 'waiting'
     if (!isSpectator && room.players.size >= room.maxPlayers) return callback?.({ ok: false, msg: '房间已满' })
-    
+
     let score = 0
     try {
       const u = await User.findById(userId).select('score').lean()
       if (u) score = u.score
     } catch (e) {}
-    
+
     if (!isSpectator && score < 100) return callback?.({ ok: false, msg: '积分不足100，无法加入该房间' })
 
     const prev = findUserRoom(userId)
@@ -154,32 +144,21 @@ export function registerBaseHandlers(io, socket) {
     }
 
     room.players.set(userId, {
-      userId,
-      username,
-      socketId: socket.id,
-      isReady: false,
-      hand: [],
-      offline: false,
-      roundScore: 0,
-      score,
-      role: isSpectator ? 'spectator' : 'player',
-      hasRobbed: false,
-      wantsRob: false,
-      bullResult: null,
-      bullResultObj: null,
-      hasShownDown: false,
-      betMultiplier: 0,
-      offlineTimer: null
+      userId, username, socketId: socket.id,
+      isReady: false, hand: [], offline: false, roundScore: 0, score,
+      role: isSpectator ? 'spectator' : 'player', hasRobbed: false, wantsRob: false,
+      bullResult: null, bullResultObj: null, hasShownDown: false,
+      betMultiplier: 0, offlineTimer: null
     })
-    
+
     socket.join(`room_${roomId}`)
     io.to(`room_${room.roomId}`).emit('room_notice', {
       message: `欢迎 ${username} ${isSpectator ? '观战' : '加入'}房间`,
       ownerName: room.players.get(room.ownerId)?.username
     })
+
     callback?.({ ok: true, isSpectator })
-    
-    // 【改造点】动态调用
+
     const plugin = getPlugin(room)
     if (plugin?.formatUpdate) io.to(`room_${room.roomId}`).emit('room_update', plugin.formatUpdate(room))
     if (isSpectator && plugin?.sendFullState) plugin.sendFullState(socket, room, userId)
@@ -191,21 +170,21 @@ export function registerBaseHandlers(io, socket) {
     if (!room) return callback?.({ ok: false, action: 'lobby' })
     const p = room.players.get(userId)
     if (!p) return callback?.({ ok: false, action: 'lobby' })
-    
+
     if (p.offlineTimer) {
       clearTimeout(p.offlineTimer)
       p.offlineTimer = null
     }
-    
+
     socket.data.userId = userId
     socket.data.username = p.username
     p.socketId = socket.id
     p.offline = false
     socket.join(`room_${room.roomId}`)
     socket.join(`user_${userId}`)
+
     callback?.({ ok: true, action: 'stay' })
-    
-    // 【改造点】动态调用
+
     const plugin = getPlugin(room)
     if (plugin?.sendFullState) plugin.sendFullState(socket, room, userId)
   })
@@ -216,24 +195,25 @@ export function registerBaseHandlers(io, socket) {
     if (!userId) return
     const room = findUserRoom(userId)
     if (!room) return
+    
     socket.leave(`room_${room.roomId}`)
     
-    if (room.phase === 'waiting' && room.currentBox && !room.currentBox.isFinished) {
-      socket.emit('__force_settle_box')
+    // 【修复点】有未结算的红包，直接调用 Service 处理，不依赖已断开的 socket
+    if (room.currentBox && !room.currentBox.isFinished) {
+      forceSettleBox(io, room)
     }
-    
+
     if (room.phase !== 'waiting') {
       const p = room.players.get(userId)
       if (p) {
         p.offline = true
-        // 【改造点】动态调用对应游戏的离线托管
         const plugin = getPlugin(room)
         if (plugin?.handleOffline) plugin.handleOffline(io, room, userId, room.phase)
         if (plugin?.formatUpdate) io.to(`room_${room.roomId}`).emit('room_update', plugin.formatUpdate(room))
       }
       return
     }
-    
+
     room.players.delete(userId)
     playerStatusMap.set(userId, 'idle')
     if (room.players.size === 0) {
@@ -253,12 +233,14 @@ export function registerBaseHandlers(io, socket) {
     if (!userId) return
     const room = findUserRoom(userId)
     if (!room) return
+    
     socket.leave(`room_${room.roomId}`)
     
-    if (room.phase === 'waiting' && room.currentBox && !room.currentBox.isFinished) {
-      socket.emit('__force_settle_box')
+    // 【修复点】有未结算的红包，直接调用 Service 处理，不依赖已断开的 socket
+    if (room.currentBox && !room.currentBox.isFinished) {
+      forceSettleBox(io, room)
     }
-    
+
     if (room.phase === 'waiting') {
       room.players.delete(userId)
       playerStatusMap.set(userId, 'idle')
@@ -277,9 +259,7 @@ export function registerBaseHandlers(io, socket) {
     const p = room.players.get(userId)
     if (p) {
       p.offline = true
-      
       if (p.offlineTimer) clearTimeout(p.offlineTimer)
-      
       p.offlineTimer = setTimeout(() => {
         if (!room.players.has(userId)) return
         room.players.delete(userId)
@@ -293,12 +273,10 @@ export function registerBaseHandlers(io, socket) {
         }
       }, 60000)
 
-      // 【改造点】动态调用对应游戏的离线托管
       const plugin = getPlugin(room)
       if (plugin?.handleOffline) {
         plugin.handleOffline(io, room, userId, room.phase)
       }
-      
       if (plugin?.formatUpdate) io.to(`room_${room.roomId}`).emit('room_update', plugin.formatUpdate(room))
     }
   })
